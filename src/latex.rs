@@ -33,7 +33,7 @@ pub fn generate_latex(gen_req: &Json<GenerationRequest>) -> Option<String> {
                     new_file.push(c);
                 } else if status == 1 {
                     status = 0;
-                    new_file.push('#'); // TODO necessary?
+                    new_file.push('#');
                     new_file.push(c);
                 } else if status == 2 {
                     key.push(c);
