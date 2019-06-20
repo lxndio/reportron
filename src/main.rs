@@ -42,8 +42,21 @@ fn generate(gen_req: Json<GenerationRequest>) -> JsonValue {
 fn list() -> JsonValue {
     let mut templates: Vec<String> = Vec::new();
 
-    for path in glob("./templates/*.tex").unwrap().filter_map(Result::ok) {
-        templates.push(path.file_stem().expect("Failed").to_str().expect("Failed").to_string())
+    for path in glob("templates/**/*.tex").unwrap().filter_map(Result::ok) {
+        // templates.push(path.file_stem().expect("Failed").to_str().expect("Failed").to_string())
+        let dirpath =  path.strip_prefix("templates").expect("Failed").parent().expect("Failed");
+        let mut dirpathstr = String::new();
+        if !dirpath.to_str().expect("Failed").to_string().is_empty() { // dirpath not empty
+
+            for component in dirpath.components() {
+                dirpathstr += component.as_os_str().to_str().expect("Failed");
+                dirpathstr += "/";
+            }
+        }
+
+        let filename = path.file_stem().expect("Failed").to_str().expect("Failed");
+
+        templates.push(format!("{}{}", dirpathstr, filename));
     }
     json!({ "templates": templates})
 }
