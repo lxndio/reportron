@@ -1,9 +1,11 @@
 use std::fs;
 use std::collections::HashMap;
 use std::process::Command;
+use std::path::Path;
 use rocket_contrib::json::Json;
 use regex::{Regex, Captures};
 use crate::generation_request::GenerationRequest;
+use uuid::Uuid;
 
 struct ForEach {
     single_var: String,
@@ -41,18 +43,21 @@ pub fn generate_latex(gen_req: &Json<GenerationRequest>, keys: &HashMap<String, 
     let id = Uuid::new_v4().to_string(); // generate random id
 
     // Create temp directory for output of this job
-    fs::create_dir(format!("pdf\\temp{}", id));
+    let temp_dir_path = Path::new("pdf").join(format!("temp-{}", id));
+    fs::create_dir(temp_dir_path.as_path()).expect("Could not create temp dir");
 
     // Create empty list of foreach objects
     let mut foreaches: Vec<ForEach> = Vec::new();
 
     // Read template file and replace the keys
-    let file = fs::read_to_string("templates\\test.tex").expect("Could not read template file");
+    let template_path = Path::new("templates").join("test.tex");
+    let file = fs::read_to_string(template_path).expect("Could not read template file");
     
     let new_file = evaluate(&file, gen_req, keys, collections, &mut foreaches).expect("Error while evaluating");
 
     // Write new file to temp directory
-    fs::write(format!("pdf\\temp{}\\new.tex", id), new_file).expect("Could not write new file");
+    let tex_output_path = temp_dir_path.join("new.tex");
+    fs::write(tex_output_path.as_path(), new_file).expect("Could not write new file");
 
     /*let output = Command::new("cmd")
         .args(&["/C", &format!("pdflatex -output-directory=pdf\\temp{} pdf\\temp{}\\new.tex", id, id)])
