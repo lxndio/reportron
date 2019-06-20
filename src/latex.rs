@@ -29,7 +29,7 @@ fn evaluate(part: &str, gen_req: &Json<GenerationRequest>, keys: &HashMap<String
     let mut new_part = String::new();
 
     for line in part.lines() {
-        let line = line.trim();
+        // let line = line.trim(); // TODO: activate trim
 
         // Replace all normal keys
         let re = Regex::new(r"#\[(\S+)\]").unwrap();
@@ -41,6 +41,7 @@ fn evaluate(part: &str, gen_req: &Json<GenerationRequest>, keys: &HashMap<String
 
 pub fn generate_latex(gen_req: &Json<GenerationRequest>, keys: &HashMap<String, String>, collections: &HashMap<String, Vec<HashMap<String, String>>>) -> Option<String> {
     let id = Uuid::new_v4().to_string(); // generate random id
+    println!("using id: {:?}", id);
 
     // Create temp directory for output of this job
     let temp_dir_path = Path::new("pdf").join(format!("temp-{}", id));
@@ -50,7 +51,7 @@ pub fn generate_latex(gen_req: &Json<GenerationRequest>, keys: &HashMap<String, 
     let mut foreaches: Vec<ForEach> = Vec::new();
 
     // Read template file and replace the keys
-    let template_path = Path::new("templates").join("test.tex");
+    let template_path = Path::new("templates").join(format!("{}.tex", gen_req.template)); // TODO: Take care of UNIX path in gen_req.template
     let file = fs::read_to_string(template_path).expect("Could not read template file");
     
     let new_file = evaluate(&file, gen_req, keys, collections, &mut foreaches).expect("Error while evaluating");
@@ -59,18 +60,22 @@ pub fn generate_latex(gen_req: &Json<GenerationRequest>, keys: &HashMap<String, 
     let tex_output_path = temp_dir_path.join("new.tex");
     fs::write(tex_output_path.as_path(), new_file).expect("Could not write new file");
 
-    /*let output = Command::new("cmd")
-        .args(&["/C", &format!("pdflatex -output-directory=pdf\\temp{} pdf\\temp{}\\new.tex", id, id)])
+    let command = format!("pdflatex -output-directory={} {}", temp_dir_path.to_str().expect("Failed"), tex_output_path.to_str().expect("Failed")).to_string();
+    println!("command: {}", command);
+    let output = Command::new("cmd")
+        .args(&["/C", &format!("{}", command)])
         .output()
         .expect("Failed to run pdflatex");
 
     // Rename pdf output file in temp directory and move it to the main directory
-    fs::rename(format!("pdf\\temp{}\\new.pdf", id), format!("pdf\\output{}.pdf", id));
+    let pdf_temp_path = tex_output_path.with_extension("pdf");
+    let pdf_output_path = Path::new("pdf").join(format!("output-{}.pdf", id));
+    fs::rename(pdf_temp_path.to_str().expect("Failed"), pdf_output_path.to_str().expect("Failed")).expect("Failed to rename and move output pdf file");
 
     // Delete temp directory
-    fs::remove_dir_all(format!("pdf\\temp{}", id));
+    fs::remove_dir_all(temp_dir_path).expect("Failed to remove temp dir");
 
-    println!("{:?}", output);*/
+    println!("{:?}", output);
 
     Some(id)
 }
