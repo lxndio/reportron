@@ -22,6 +22,73 @@ impl ForEach {
     }
 }
 
+fn evaluate(part: &str, gen_req: &Json<GenerationRequest>, foreaches: &mut Vec<ForEach>) -> Option<String> {
+    let mut new_part = String::new();
+    let mut status = 0;
+    let mut key = String::new();
+
+    for c in part.chars() {
+        match c {
+            '#' => {
+                if status == 0 { status = 1 }
+            },
+            '[' => {
+                if status == 1 { status = 2 }
+                else { new_part.push(c) }
+            },
+            ']' => {
+                if status == 2 { status = 3 }
+                else { new_part.push(c) }
+            },
+            _   => {
+                if status == 0 {
+                    new_part.push(c);
+                } else if status == 1 {
+                    status = 0;
+                    new_part.push('#');
+                    new_part.push(c);
+                } else if status == 2 {
+                    key.push(c);
+                } else if status == 3 {
+                    // If there are any spaces, the key has to be a command and not a simple key
+                    if key.contains(' ') {
+                        let parts: Vec<&str> = key.trim().split_whitespace().collect();
+
+                        if parts.len() == 4 && parts.get(0).unwrap() == &"foreach" {
+                            if parts.get(2).unwrap() == &"in" {
+                                // TODO generate part
+                                new_part += &match evaluate(&part, gen_req, foreaches) {
+                                    Some(part) => part,
+                                    None => return None,
+                                }
+                            } else {
+                                return None; // Invalid syntax
+                            }
+                        } else if parts.len() == 2 && parts.get(0).unwrap() == &"end" {
+                            match parts.get(1).unwrap() {
+                                &"foreach" => foreaches.pop(),
+                                _ => return None, // Invalid keyword used
+                            };
+                        }
+                    } else {
+                        // TODO make not hardcoded
+                        if key == "date" {
+                            new_part += &gen_req.date;
+                        } else {
+                            return None; // invalid key used
+                        }
+                    }
+
+                    status = 0;
+                    new_part.push(c);
+                }
+            }
+        }
+    }
+
+    Some(new_part)
+}
+
 pub fn generate_latex(gen_req: &Json<GenerationRequest>, collections: HashMap<String, Vec<HashMap<String, String>>>) -> Option<String> {
     let id = "12345".to_string(); // generate random id
 
@@ -59,37 +126,16 @@ pub fn generate_latex(gen_req: &Json<GenerationRequest>, collections: HashMap<St
                 } else if status == 2 {
                     key.push(c);
                 } else if status == 3 {
-                    // If there are spaces, the key is has to be a command and not a simple key
+                    // If there are any spaces, the key has to be a command and not a simple key
                     if key.contains(' ') {
                         let parts: Vec<&str> = key.trim().split_whitespace().collect();
 
                         if parts.len() == 4 && parts.get(0).unwrap() == &"foreach" {
                             if parts.get(2).unwrap() == &"in" {
-                                foreaches.push(ForEach::new(parts.get(1).unwrap().to_string(), parts.get(3).unwrap().to_string()));
+                                // TODO recursively run a function for validating the part inside of the foreach loop
+                                // e.g. validate(part, &mut foreaches) // Pass &mut foreaches to have access to nested foreaches
                             } else {
                                 return None; // Invalid syntax
-                            }
-                        } else if parts.len() == 3 && parts.get(1).unwrap() == &"of" {
-                            // Find single variable in foreaches
-                            for foreach in &mut foreaches {
-                                if foreach.done == false && &foreach.single_var == parts.get(2).unwrap() {
-                                    match collections.get(&foreach.collection_var) {
-                                        Some(collection) => {
-                                            if collection.len() > foreach.current_pos {
-                                                match collection.get(foreach.current_pos).unwrap().get(*parts.get(0).unwrap()) {
-                                                    Some(element) => {
-                                                        new_file += &element;
-                                                        foreach.current_pos += 1;
-                                                    },
-                                                    None => return None, // Field not found in collection
-                                                }
-                                            } else {
-                                                foreach.done = true;
-                                            }
-                                        },
-                                        None => return None, // Collection not found
-                                    }
-                                }
                             }
                         } else if parts.len() == 2 && parts.get(0).unwrap() == &"end" {
                             match parts.get(1).unwrap() {
