@@ -7,6 +7,8 @@ mod latex;
 mod generation_request;
 
 use std::collections::HashMap;
+use std::path::Path;
+use rocket::response::NamedFile;
 use rocket_contrib::json::{Json, JsonValue};
 use crate::generation_request::GenerationRequest;
 use crate::latex::generate_latex;
@@ -31,10 +33,16 @@ fn generate(gen_req: Json<GenerationRequest>) -> JsonValue {
     json!({ "status": "ok", "id": id})
 }
 
+#[get("/<id>")]
+fn get_pdf(id: usize) -> Option<NamedFile> {
+    NamedFile::open(Path::new(&format!("pdf/output{}.pdf", id))).ok()
+}
+
 fn rocket() -> rocket::Rocket {
     rocket::ignite()
         .mount("/", routes![index])
         .mount("/generate", routes![generate])
+        .mount("/pdf", routes![get_pdf])
 }
 
 fn main() {
