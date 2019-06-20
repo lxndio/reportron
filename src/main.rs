@@ -29,7 +29,10 @@ fn generate(gen_req: Json<GenerationRequest>) -> JsonValue {
     let mut collections: HashMap<String, Vec<HashMap<String, String>>> = HashMap::new();
     collections.insert("articles".to_string(), vec![article1, article2]);
 
-    let id = generate_latex(&gen_req, collections);
+    let mut keys: HashMap<String, String> = HashMap::new();
+    keys.insert("date".to_string(), "20.06.2019".to_string());
+
+    let id = generate_latex(&gen_req, &keys, &collections);
     json!({ "status": "ok", "id": id})
 }
 
