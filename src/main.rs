@@ -33,7 +33,7 @@ fn generate(gen_req: Json<GenerationRequest>) -> JsonValue {
     keys.insert("date".to_string(), "20.06.2019".to_string());
 
     let id = generate_latex(&gen_req, &keys, &collections);
-    json!({ "status": "ok", "id": id})
+    json!({ "status": "ok", "id": id })
 }
 
 #[get("/<id>")]
