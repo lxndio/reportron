@@ -38,7 +38,7 @@ fn evaluate(part: &str, gen_req: &Json<GenerationRequest>, keys: &HashMap<String
 }
 
 pub fn generate_latex(gen_req: &Json<GenerationRequest>, keys: &HashMap<String, String>, collections: &HashMap<String, Vec<HashMap<String, String>>>) -> Option<String> {
-    let id = "12345".to_string(); // generate random id
+    let id = Uuid::new_v4().to_string(); // generate random id
 
     // Create temp directory for output of this job
     fs::create_dir(format!("pdf\\temp{}", id));
@@ -67,5 +67,5 @@ pub fn generate_latex(gen_req: &Json<GenerationRequest>, keys: &HashMap<String, 
 
     println!("{:?}", output);*/
 
-    Some("12345".to_string())
+    Some(id)
 }
