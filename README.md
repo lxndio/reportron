@@ -2,9 +2,9 @@
 Generate pdf reports from json HTTP requests using .tex template files.
 
 
-## using reportron
+## Using reportron
 
-Fire a HTTP POST request at `localhost:8000/generate` with body: 
+Fire an HTTP POST request to `localhost:8000/generate` with body: 
 ```json
 {
     "template": "test",
