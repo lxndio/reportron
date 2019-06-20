@@ -55,15 +55,18 @@ fn evaluate(part: &str, gen_req: &Json<GenerationRequest>, foreaches: &mut Vec<F
                         let parts: Vec<&str> = key.trim().split_whitespace().collect();
 
                         if parts.len() == 4 && parts.get(0).unwrap() == &"foreach" {
-                            if parts.get(2).unwrap() == &"in" {
-                                // TODO generate part
-                                new_part += &match evaluate(&part, gen_req, foreaches) {
-                                    Some(part) => part,
-                                    None => return None,
-                                }
+                            let foreach_part = String::new();
+                            // read all chars until #[end foreach]
+
+                            new_part += &match evaluate(&foreach_part, gen_req, foreaches) {
+                                Some(part) => part,
+                                None => return None,
+                            };
+                            /*if parts.get(2).unwrap() == &"in" {
+                                // TODO
                             } else {
                                 return None; // Invalid syntax
-                            }
+                            }*/
                         } else if parts.len() == 2 && parts.get(0).unwrap() == &"end" {
                             match parts.get(1).unwrap() {
                                 &"foreach" => foreaches.pop(),
