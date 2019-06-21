@@ -28,17 +28,98 @@ impl ForEach {
 
     fn set_content(&mut self, content: String) { self.content = content; }
     fn content(&self) -> &String { &self.content }
+    fn append_content(&mut self, content: String) { self.content += &content; }
+}
+
+fn eval_foreach(foreach: &ForEach, collections: &HashMap<String, Vec<HashMap<String, String>>>) -> Result<String, String> {
+    Ok("hi".to_string())
 }
 
 fn evaluate(file: &str, gen_req: &Json<GenerationRequest>, keys: &HashMap<String, String>, collections: &HashMap<String, Vec<HashMap<String, String>>>) -> Result<String, String> {
     let mut new_file = String::new();
-  
+    let mut foreaches: Vec<ForEach> = Vec::new();
+
+    // Replace all keys
     for line in file.lines() {
         let line = line.trim();
 
-        // Replace all normal keys
         let re = Regex::new(r"#\[(\S+)\]").unwrap();
-        new_file += &format!("{}{}", re.replace_all(line, |caps: &Captures| keys.get(&caps[1]).expect("Key not found")), "\n");
+        new_file += &format!("{}\n", re.replace_all(line, |caps: &Captures| keys.get(&caps[1]).expect("Key not found")));
+    }
+
+    // Search for line that matches foreach pattern
+    let re_begin = Regex::new(r"#\[foreach (\S+) in (\S+)\]").unwrap();
+    let re_end = Regex::new(r"#\[end foreach\]").unwrap();
+    let file = new_file;
+    let mut new_file = String::new();
+    let mut foreach_stack: Vec<String> = Vec::new();
+
+    for line in file.lines() {
+        if re_begin.is_match(line) {
+            // Store variables read from regex capture groups
+            let caps = re_begin.captures(line).unwrap();
+            let (single_var, collection_var) = (
+                caps.get(1).map_or("", |m| m.as_str()),
+                caps.get(2).map_or("", |m| m.as_str()),
+            );
+
+            // Fail if any of the capture groups was empty (TODO can this happen?)
+            if single_var == "" || collection_var == "" {
+                return Err("Syntax error in foreach".to_string());
+            }
+
+            // Create ForEach object and place marker in new_file or outer ForEach's content
+            foreaches.push(ForEach::new(single_var.to_string(), collection_var.to_string()));
+            foreach_stack.push(single_var.to_string());
+
+            if foreach_stack.last().is_none() {
+                new_file += &format!("#![FE {}]\n", single_var);
+            } else {
+                for foreach in foreaches.iter_mut() {
+                    if foreach.single_var() == foreach_stack.last().unwrap() {
+                        foreach.append_content(format!("#![FE {}]\n", single_var));
+                        break;
+                    }
+                }
+            }
+        } else if re_end.is_match(line) {
+            // Fail if there is no ForEach to end
+            if foreach_stack.pop().is_none() {
+                return Err("end foreach without foreach".to_string());
+            }
+            foreach_stack.pop();
+        } else {
+            if foreach_stack.last().is_none() {
+                // Add line to new_file if it didn't contain a ForEach header
+                new_file += &format!("{}\n", line);
+            } else {
+                // Add it to the innermost ForEach's content instead if necessary
+                for foreach in foreaches.iter_mut() {
+                    if foreach.single_var() == foreach_stack.last().unwrap() {
+                        foreach.append_content(format!("{}\n", line));
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // Evaluate ForEaches
+    let re = Regex::new(r"#!\[FE (\S+)\]").unwrap();
+    let mut lines: Vec<&str> = new_file.lines().collect::<Vec<&str>>();
+    for i in 0..lines.len() {
+        if re.is_match(lines[i]) {
+            // Remove marker
+            lines.remove(i);
+
+            // Find corresponding ForEach
+            for foreach in foreaches.iter() {
+                if foreach.single_var() == re.captures(lines[i]).unwrap().get(1).map_or("", |m| m.as_str()) {
+
+                }
+            }
+            lines.insert(i, eval_foreach(foreach, collections));
+        }
     }
 
     Ok(new_file)
