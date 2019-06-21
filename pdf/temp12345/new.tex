@@ -22,8 +22,9 @@ right=20mm,
 \begin{center}
 \begin{tabular}{ l r }
 \hline
+#[foreach a in articles]
 #[name of a] & #[price of a] \\ \hline
-#[name of a] & #[price of a] \\ \hline
+#[end foreach a]
 \hline
 \end{tabular}
 \end{center}
