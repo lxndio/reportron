@@ -10,8 +10,7 @@ use uuid::Uuid;
 struct ForEach {
     single_var: String,
     collection_var: String,
-    current_pos: usize,
-    done: bool,
+    content: String,
 }
 
 impl ForEach {
@@ -19,24 +18,30 @@ impl ForEach {
         ForEach {
             single_var,
             collection_var,
-            current_pos: 0,
-            done: false,
+            content: String::new(),
         }
     }
+
+    fn single_var(&self) -> &String { &self.single_var }
+
+    fn collection_var(&self) -> &String { &self.collection_var }
+
+    fn set_content(&mut self, content: String) { self.content = content; }
+    fn content(&self) -> &String { &self.content }
 }
 
-fn evaluate(part: &str, gen_req: &Json<GenerationRequest>, keys: &HashMap<String, String>, collections: &HashMap<String, Vec<HashMap<String, String>>>, foreaches: &mut Vec<ForEach>) -> Option<String> {
-    let mut new_part = String::new();
-
-    for line in part.lines() {
-        // let line = line.trim(); // TODO: activate trim
+fn evaluate(file: &str, gen_req: &Json<GenerationRequest>, keys: &HashMap<String, String>, collections: &HashMap<String, Vec<HashMap<String, String>>>) -> Result<String, String> {
+    let mut new_file = String::new();
+  
+    for line in file.lines() {
+        let line = line.trim();
 
         // Replace all normal keys
         let re = Regex::new(r"#\[(\S+)\]").unwrap();
-        new_part += &re.replace_all(line, |caps: &Captures| keys.get(&caps[1]).expect("Key not found"));
+        new_file += &format!("{}{}", re.replace_all(line, |caps: &Captures| keys.get(&caps[1]).expect("Key not found")), "\n");
     }
 
-    Some(new_part)
+    Ok(new_file)
 }
 
 pub fn generate_latex(gen_req: &Json<GenerationRequest>, keys: &HashMap<String, String>, collections: &HashMap<String, Vec<HashMap<String, String>>>) -> Option<String> {
@@ -47,14 +52,11 @@ pub fn generate_latex(gen_req: &Json<GenerationRequest>, keys: &HashMap<String, 
     let temp_dir_path = Path::new("pdf").join(format!("temp-{}", id));
     fs::create_dir(temp_dir_path.as_path()).expect("Could not create temp dir");
 
-    // Create empty list of foreach objects
-    let mut foreaches: Vec<ForEach> = Vec::new();
-
     // Read template file and replace the keys
     let template_path = Path::new("templates").join(format!("{}.tex", gen_req.template)); // TODO: Take care of UNIX path in gen_req.template
     let file = fs::read_to_string(template_path).expect("Could not read template file");
     
-    let new_file = evaluate(&file, gen_req, keys, collections, &mut foreaches).expect("Error while evaluating");
+    let new_file = evaluate(&file, gen_req, keys, collections).expect("Error while evaluating");
 
     // Write new file to temp directory
     let tex_output_path = temp_dir_path.join("new.tex");

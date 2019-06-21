@@ -8,6 +8,8 @@ mod generation_request;
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::result::Result;
+use glob::glob;
 use rocket::response::NamedFile;
 use rocket_contrib::json::{Json, JsonValue};
 use crate::generation_request::GenerationRequest;
@@ -33,7 +35,30 @@ fn generate(gen_req: Json<GenerationRequest>) -> JsonValue {
     keys.insert("date".to_string(), "20.06.2019".to_string());
 
     let id = generate_latex(&gen_req, &keys, &collections);
-    json!({ "status": "ok", "id": id})
+    json!({ "status": "ok", "id": id })
+}
+
+#[get("/")]
+fn list() -> JsonValue {
+    let mut templates: Vec<String> = Vec::new();
+
+    for path in glob("templates/**/*.tex").unwrap().filter_map(Result::ok) {
+        // templates.push(path.file_stem().expect("Failed").to_str().expect("Failed").to_string())
+        let dirpath =  path.strip_prefix("templates").expect("Failed").parent().expect("Failed");
+        let mut dirpathstr = String::new();
+        if !dirpath.to_str().expect("Failed").to_string().is_empty() { // dirpath not empty
+
+            for component in dirpath.components() {
+                dirpathstr += component.as_os_str().to_str().expect("Failed");
+                dirpathstr += "/";
+            }
+        }
+
+        let filename = path.file_stem().expect("Failed").to_str().expect("Failed");
+
+        templates.push(format!("{}{}", dirpathstr, filename));
+    }
+    json!({ "templates": templates})
 }
 
 #[get("/<id>")]
@@ -43,9 +68,10 @@ fn get_pdf(id: usize) -> Option<NamedFile> {
 
 fn rocket() -> rocket::Rocket {
     rocket::ignite()
-        .mount("/", routes![index])
-        .mount("/generate", routes![generate])
-        .mount("/pdf", routes![get_pdf])
+    .mount("/", routes![index])
+    .mount("/templates", routes![list])
+    .mount("/generate", routes![generate])
+    .mount("/pdf", routes![get_pdf])
 }
 
 fn main() {
