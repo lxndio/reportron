@@ -11,6 +11,8 @@ struct ForEach {
     single_var: String,
     collection_var: String,
     content: String,
+    objects: Vec<HashMap<String, String>>,
+    current_obj: usize,
 }
 
 impl ForEach {
@@ -19,6 +21,8 @@ impl ForEach {
             single_var,
             collection_var,
             content: String::new(),
+            objects: Vec::new(),
+            current_obj: 0,
         }
     }
 
@@ -29,13 +33,112 @@ impl ForEach {
     fn set_content(&mut self, content: String) { self.content = content; }
     fn content(&self) -> &String { &self.content }
     fn append_content(&mut self, content: String) { self.content += &content; }
+
+    fn gen_objects(&mut self, collections: &HashMap<String, Vec<HashMap<String, String>>>) -> Result<(), String> {
+        self.objects = match collections.get(self.collection_var()) {
+            Some(obj) => *obj,
+            None => return Err(format!("Collection variable {} of foreach not found", self.collection_var())),
+        };
+
+        Ok(())
+    }
+
+    fn has_next_obj(&self) -> bool {
+        (0..self.objects.len()).contains(&self.current_obj)
+    }
+
+    fn next_obj(&self) -> Option<&HashMap<String, String>> {
+        if self.has_next_obj() {
+            Some(&self.objects[self.current_obj])
+        } else {
+            None
+        }
+    }
+
+    fn current_obj(&self) -> &HashMap<String, String> {
+        &self.objects[self.current_obj]
+    }
+
+    // Get a ForEach from a &Vec<ForEach> by single_var
+    fn get_from(foreaches: &Vec<ForEach>, single_var: String) -> Option<&ForEach> {
+        for foreach in foreaches.iter() {
+            if foreach.single_var() == &single_var {
+                return Some(&foreach);
+            }
+        }
+
+        None
+    }
+
+    fn get_from_mut(foreaches: &mut Vec<ForEach>, single_var: String) -> Option<&mut ForEach> {
+        for foreach in foreaches.iter_mut() {
+            if foreach.single_var() == &single_var {
+                return Some(foreach);
+            }
+        }
+
+        None
+    }
 }
 
-fn eval_foreach(foreach: &ForEach, collections: &HashMap<String, Vec<HashMap<String, String>>>) -> Result<String, String> {
-    Ok("hi".to_string())
+fn eval_foreach(foreach: String, foreaches: &mut Vec<ForEach>, collections: &HashMap<String, Vec<HashMap<String, String>>>) -> Result<String, String> {
+    let eval_content = String::new();
+    let re_fe = Regex::new(r"#!\[FE (\S+)\]").unwrap();
+    let re_of = Regex::new(r"#\[(\S+) of (\S+)\]").unwrap();
+
+    let foreach: &mut ForEach = ForEach::get_from_mut(foreaches, foreach).unwrap();
+    let mut lines: Vec<String> = foreach.content().lines().map(|l| l.to_string()).collect::<Vec<String>>();
+
+    match foreach.gen_objects(collections) {
+        Ok(()) => (),
+        Err(e) => return Err(e),
+    };
+
+    while foreach.has_next_obj() {
+        for i in 0..lines.len() {
+            // If there is a ForEach nested in this one, evaluate it recursively
+            if re_fe.is_match(&lines[i]) {
+                // Remove marker
+                lines.remove(i);
+
+                // Find corresponding ForEach
+                let mut found = false;
+                for foreach in foreaches.iter_mut() {
+                    if foreach.single_var() == re_fe.captures(&lines[i]).unwrap().get(1).map_or("", |m| m.as_str()) {
+                        lines.insert(i, match eval_foreach(foreach.single_var().to_string(), foreaches, collections) {
+                            Ok(l) => l,
+                            Err(e) => return Err(e),
+                        });
+                        found = true;
+                        break;
+                    }
+                }
+
+                if !found {
+                    return Err("Internal error: invalid foreach marker".to_string());
+                }
+            } else {
+                foreach.next_obj();
+                let new_line = &lines[i];
+                // TODO make safe (remove unwraps)
+                re_of.replace_all(&new_line, |caps: &Captures| ForEach::get_from(foreaches, caps[2].to_string()).unwrap().current_obj().get(&caps[1]).unwrap());
+                // Fill in to result
+            }
+        }
+    }
+
+    let mut res = String::new();
+    for line in lines.iter() {
+        res += &format!("\n{}", line);
+    }
+
+    Ok(res)
 }
 
-fn evaluate(file: &str, gen_req: &Json<GenerationRequest>, keys: &HashMap<String, String>, collections: &HashMap<String, Vec<HashMap<String, String>>>) -> Result<String, String> {
+fn evaluate(file: &str, gen_req: &Json<GenerationRequest>) -> Result<String, String> {
+    let keys = &gen_req.keys;
+    let collections = &gen_req.collections;
+
     let mut new_file = String::new();
     let mut foreaches: Vec<ForEach> = Vec::new();
 
@@ -106,26 +209,35 @@ fn evaluate(file: &str, gen_req: &Json<GenerationRequest>, keys: &HashMap<String
 
     // Evaluate ForEaches
     let re = Regex::new(r"#!\[FE (\S+)\]").unwrap();
-    let mut lines: Vec<&str> = new_file.lines().collect::<Vec<&str>>();
+    let mut lines: Vec<String> = new_file.lines().map(|l| l.to_string()).collect::<Vec<String>>();
     for i in 0..lines.len() {
-        if re.is_match(lines[i]) {
+        if re.is_match(&lines[i]) {
             // Remove marker
             lines.remove(i);
 
             // Find corresponding ForEach
+            let mut found = false;
             for foreach in foreaches.iter() {
-                if foreach.single_var() == re.captures(lines[i]).unwrap().get(1).map_or("", |m| m.as_str()) {
-
+                if foreach.single_var() == re.captures(&lines[i]).unwrap().get(1).map_or("", |m| m.as_str()) {
+                    lines.insert(i, match eval_foreach(foreach.single_var().to_string(), &mut foreaches, collections) {
+                        Ok(l) => l,
+                        Err(e) => return Err(e),
+                    });
+                    found = true;
+                    break;
                 }
             }
-            lines.insert(i, eval_foreach(foreach, collections));
+
+            if !found {
+                return Err("Internal error: invalid foreach marker".to_string());
+            }
         }
     }
 
     Ok(new_file)
 }
 
-pub fn generate_latex(gen_req: &Json<GenerationRequest>, keys: &HashMap<String, String>, collections: &HashMap<String, Vec<HashMap<String, String>>>) -> Option<String> {
+pub fn generate_latex(gen_req: &Json<GenerationRequest>) -> Option<String> {
     let id = Uuid::new_v4().to_string(); // generate random id
     println!("using id: {:?}", id);
 
@@ -137,13 +249,14 @@ pub fn generate_latex(gen_req: &Json<GenerationRequest>, keys: &HashMap<String, 
     let template_path = Path::new("templates").join(format!("{}.tex", gen_req.template)); // TODO: Take care of UNIX path in gen_req.template
     let file = fs::read_to_string(template_path).expect("Could not read template file");
     
-    let new_file = evaluate(&file, gen_req, keys, collections).expect("Error while evaluating");
+    // Evaluate the template file using the data from gen_req
+    let new_file = evaluate(&file, gen_req).expect("Error while evaluating");
 
     // Write new file to temp directory
     let tex_output_path = temp_dir_path.join("new.tex");
     fs::write(tex_output_path.as_path(), new_file).expect("Could not write new file");
 
-    let command = format!("pdflatex -output-directory={} {}", temp_dir_path.to_str().expect("Failed"), tex_output_path.to_str().expect("Failed")).to_string();
+    /*let command = format!("pdflatex -output-directory={} {}", temp_dir_path.to_str().expect("Failed"), tex_output_path.to_str().expect("Failed")).to_string();
     println!("command: {}", command);
     let output = Command::new("cmd")
         .args(&["/C", &format!("{}", command)])
@@ -158,7 +271,7 @@ pub fn generate_latex(gen_req: &Json<GenerationRequest>, keys: &HashMap<String, 
     // Delete temp directory
     fs::remove_dir_all(temp_dir_path).expect("Failed to remove temp dir");
 
-    println!("{:?}", output);
+    println!("{:?}", output);*/
 
     Some(id)
 }
