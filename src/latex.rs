@@ -30,13 +30,12 @@ impl ForEach {
 
     fn collection_var(&self) -> &String { &self.collection_var }
 
-    fn set_content(&mut self, content: String) { self.content = content; }
     fn content(&self) -> &String { &self.content }
     fn append_content(&mut self, content: String) { self.content += &content; }
 
     fn gen_objects(&mut self, collections: &HashMap<String, Vec<HashMap<String, String>>>) -> Result<(), String> {
         self.objects = match collections.get(self.collection_var()) {
-            Some(obj) => *obj,
+            Some(obj) => obj.to_vec(),
             None => return Err(format!("Collection variable {} of foreach not found", self.collection_var())),
         };
 
@@ -47,9 +46,10 @@ impl ForEach {
         (0..self.objects.len()).contains(&self.current_obj)
     }
 
-    fn next_obj(&self) -> Option<&HashMap<String, String>> {
+    fn next_obj(&mut self) -> Option<&HashMap<String, String>> {
         if self.has_next_obj() {
-            Some(&self.objects[self.current_obj])
+            self.current_obj += 1;
+            Some(&self.objects[self.current_obj-1])
         } else {
             None
         }
@@ -81,31 +81,162 @@ impl ForEach {
     }
 }
 
-fn eval_foreach(foreach: String, foreaches: &mut Vec<ForEach>, collections: &HashMap<String, Vec<HashMap<String, String>>>) -> Result<String, String> {
-    let eval_content = String::new();
-    let re_fe = Regex::new(r"#!\[FE (\S+)\]").unwrap();
-    let re_of = Regex::new(r"#\[(\S+) of (\S+)\]").unwrap();
+struct Evaluator {
+    foreaches: Vec<ForEach>,
+}
 
-    let foreach: &mut ForEach = ForEach::get_from_mut(foreaches, foreach).unwrap();
-    let mut lines: Vec<String> = foreach.content().lines().map(|l| l.to_string()).collect::<Vec<String>>();
+impl Evaluator {
+    fn new() -> Evaluator {
+        Evaluator {
+            foreaches: Vec::new(),
+        }
+    }
 
-    match foreach.gen_objects(collections) {
-        Ok(()) => (),
-        Err(e) => return Err(e),
-    };
+    fn eval_foreach(&mut self, foreach: String, collections: &HashMap<String, Vec<HashMap<String, String>>>) -> Result<String, String> {
+        let re_fe = Regex::new(r"#!\[FE (\S+)\]").unwrap();
+        let re_of = Regex::new(r"#\[(\S+) of (\S+)\]").unwrap();
 
-    while foreach.has_next_obj() {
+        //let foreach: &mut ForEach = ForEach::get_from_mut(&mut self.foreaches, foreach).unwrap();
+        let foreach: &str = &foreach;
+        let mut lines: Vec<String> = ForEach::get_from(&self.foreaches, foreach.to_string()).unwrap().content().lines().map(|l| l.to_string()).collect::<Vec<String>>();
+
+        match ForEach::get_from_mut(&mut self.foreaches, foreach.to_string()).unwrap().gen_objects(collections) {
+            Ok(()) => (),
+            Err(e) => return Err(e),
+        };
+
+        while ForEach::get_from(&self.foreaches, foreach.to_string()).unwrap().has_next_obj() {
+            for i in 0..lines.len() {
+                // If there is a ForEach nested in this one, evaluate it recursively
+                if re_fe.is_match(&lines[i]) {
+                    // Remove marker
+                    lines.remove(i);
+
+                    // Find corresponding ForEach
+                    let mut found = false;
+                    // Loop of the foreaches using single var as the key to prevent direct referencing
+                    for foreach in self.foreaches.iter().map(|fe| fe.single_var().to_string()) {
+                        if foreach == re_fe.captures(&lines[i]).unwrap().get(1).map_or("", |m| m.as_str()) {
+                            lines.insert(i, match self.eval_foreach(foreach, collections) {
+                                Ok(l) => l,
+                                Err(e) => return Err(e),
+                            });
+                            found = true;
+                            break;
+                        }
+                    }
+
+                    if !found {
+                        return Err("Internal error: invalid foreach marker".to_string());
+                    }
+                } else {
+                    ForEach::get_from_mut(&mut self.foreaches, foreach.to_string()).unwrap().next_obj();
+                    let new_line = &lines[i];
+                    // TODO make safe (remove unwraps)
+                    re_of.replace_all(
+                        &new_line,
+                        |caps: &Captures|
+                            ForEach::get_from(
+                                &self.foreaches,
+                                caps.get(2).expect("Shouldn't happen").as_str().to_string())
+                                .expect("Couldn't get from foreaches")
+                                .current_obj().get(&caps[1])
+                                .unwrap());
+                    // Fill in to result
+                }
+            }
+        }
+
+        let mut res = String::new();
+        for line in lines.iter() {
+            res += &format!("\n{}", line);
+        }
+
+        Ok(res)
+    }
+
+    fn evaluate(&mut self, file: &str, gen_req: &Json<GenerationRequest>) -> Result<String, String> {
+        let keys = &gen_req.keys;
+        let collections = &gen_req.collections;
+
+        let mut new_file = String::new();
+
+        // Replace all keys
+        for line in file.lines() {
+            let line = line.trim();
+
+            let re = Regex::new(r"#\[(\S+)\]").unwrap();
+            new_file += &format!("{}\n", re.replace_all(line, |caps: &Captures| keys.get(&caps[1]).expect("Key not found")));
+        }
+
+        // Search for line that matches foreach pattern
+        let re_begin = Regex::new(r"#\[foreach (\S+) in (\S+)\]").unwrap();
+        let re_end = Regex::new(r"#\[end foreach\]").unwrap();
+        let file = new_file;
+        let mut new_file = String::new();
+        let mut foreach_stack: Vec<String> = Vec::new();
+
+        for line in file.lines() {
+            if re_begin.is_match(line) {
+                // Store variables read from regex capture groups
+                let caps = re_begin.captures(line).unwrap();
+                let (single_var, collection_var) = (
+                    caps.get(1).map_or("", |m| m.as_str()),
+                    caps.get(2).map_or("", |m| m.as_str()),
+                );
+
+                // Fail if any of the capture groups was empty (TODO can this happen?)
+                if single_var == "" || collection_var == "" {
+                    return Err("Syntax error in foreach".to_string());
+                }
+
+                // Add marker for outermost ForEach to new_file or otherwise to outer ForEach loop
+                if foreach_stack.last().is_none() {
+                    new_file += &format!("#![FE {}]\n", single_var);
+                } else {
+                    for foreach in self.foreaches.iter_mut() {
+                        if foreach.single_var() == foreach_stack.last().expect("Can't happen because of if condition") {
+                            foreach.append_content(format!("#![FE {}]\n", single_var));
+                            break;
+                        }
+                    }
+                }
+
+                // Create ForEach object and place marker in new_file or outer ForEach's content
+                self.foreaches.push(ForEach::new(single_var.to_string(), collection_var.to_string()));
+                foreach_stack.push(single_var.to_string());
+            } else if re_end.is_match(line) {
+                // Fail if there is no ForEach to end
+                if foreach_stack.pop().is_none() {
+                    return Err("end foreach without foreach".to_string());
+                }
+                foreach_stack.pop();
+            } else {
+                if foreach_stack.last().is_none() {
+                    // Add line to new_file if it didn't contain a ForEach header
+                    new_file += &format!("{}\n", line);
+                } else {
+                    // Add it to the innermost ForEach's content instead if necessary
+                    for foreach in self.foreaches.iter_mut() {
+                        if foreach.single_var() == foreach_stack.last().unwrap() {
+                            foreach.append_content(format!("{}\n", line));
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Evaluate ForEaches
+        let re = Regex::new(r"#!\[FE (\S+)\]").unwrap();
+        let mut lines: Vec<String> = new_file.lines().map(|l| l.to_string()).collect::<Vec<String>>();
         for i in 0..lines.len() {
-            // If there is a ForEach nested in this one, evaluate it recursively
-            if re_fe.is_match(&lines[i]) {
-                // Remove marker
-                lines.remove(i);
-
+            if re.is_match(&lines[i]) {
                 // Find corresponding ForEach
                 let mut found = false;
-                for foreach in foreaches.iter_mut() {
-                    if foreach.single_var() == re_fe.captures(&lines[i]).unwrap().get(1).map_or("", |m| m.as_str()) {
-                        lines.insert(i, match eval_foreach(foreach.single_var().to_string(), foreaches, collections) {
+                for foreach in self.foreaches.iter().map(|fe| fe.single_var().to_string()) {
+                    if foreach == re.captures(&lines[i]).unwrap().get(1).map_or("", |m| m.as_str()) {
+                        lines.insert(i, match self.eval_foreach(foreach, collections) {
                             Ok(l) => l,
                             Err(e) => return Err(e),
                         });
@@ -114,127 +245,17 @@ fn eval_foreach(foreach: String, foreaches: &mut Vec<ForEach>, collections: &Has
                     }
                 }
 
+                // Remove marker
+                lines.remove(i);
+
                 if !found {
                     return Err("Internal error: invalid foreach marker".to_string());
                 }
-            } else {
-                foreach.next_obj();
-                let new_line = &lines[i];
-                // TODO make safe (remove unwraps)
-                re_of.replace_all(&new_line, |caps: &Captures| ForEach::get_from(foreaches, caps[2].to_string()).unwrap().current_obj().get(&caps[1]).unwrap());
-                // Fill in to result
             }
         }
+
+        Ok(new_file)
     }
-
-    let mut res = String::new();
-    for line in lines.iter() {
-        res += &format!("\n{}", line);
-    }
-
-    Ok(res)
-}
-
-fn evaluate(file: &str, gen_req: &Json<GenerationRequest>) -> Result<String, String> {
-    let keys = &gen_req.keys;
-    let collections = &gen_req.collections;
-
-    let mut new_file = String::new();
-    let mut foreaches: Vec<ForEach> = Vec::new();
-
-    // Replace all keys
-    for line in file.lines() {
-        let line = line.trim();
-
-        let re = Regex::new(r"#\[(\S+)\]").unwrap();
-        new_file += &format!("{}\n", re.replace_all(line, |caps: &Captures| keys.get(&caps[1]).expect("Key not found")));
-    }
-
-    // Search for line that matches foreach pattern
-    let re_begin = Regex::new(r"#\[foreach (\S+) in (\S+)\]").unwrap();
-    let re_end = Regex::new(r"#\[end foreach\]").unwrap();
-    let file = new_file;
-    let mut new_file = String::new();
-    let mut foreach_stack: Vec<String> = Vec::new();
-
-    for line in file.lines() {
-        if re_begin.is_match(line) {
-            // Store variables read from regex capture groups
-            let caps = re_begin.captures(line).unwrap();
-            let (single_var, collection_var) = (
-                caps.get(1).map_or("", |m| m.as_str()),
-                caps.get(2).map_or("", |m| m.as_str()),
-            );
-
-            // Fail if any of the capture groups was empty (TODO can this happen?)
-            if single_var == "" || collection_var == "" {
-                return Err("Syntax error in foreach".to_string());
-            }
-
-            // Create ForEach object and place marker in new_file or outer ForEach's content
-            foreaches.push(ForEach::new(single_var.to_string(), collection_var.to_string()));
-            foreach_stack.push(single_var.to_string());
-
-            if foreach_stack.last().is_none() {
-                new_file += &format!("#![FE {}]\n", single_var);
-            } else {
-                for foreach in foreaches.iter_mut() {
-                    if foreach.single_var() == foreach_stack.last().unwrap() {
-                        foreach.append_content(format!("#![FE {}]\n", single_var));
-                        break;
-                    }
-                }
-            }
-        } else if re_end.is_match(line) {
-            // Fail if there is no ForEach to end
-            if foreach_stack.pop().is_none() {
-                return Err("end foreach without foreach".to_string());
-            }
-            foreach_stack.pop();
-        } else {
-            if foreach_stack.last().is_none() {
-                // Add line to new_file if it didn't contain a ForEach header
-                new_file += &format!("{}\n", line);
-            } else {
-                // Add it to the innermost ForEach's content instead if necessary
-                for foreach in foreaches.iter_mut() {
-                    if foreach.single_var() == foreach_stack.last().unwrap() {
-                        foreach.append_content(format!("{}\n", line));
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    // Evaluate ForEaches
-    let re = Regex::new(r"#!\[FE (\S+)\]").unwrap();
-    let mut lines: Vec<String> = new_file.lines().map(|l| l.to_string()).collect::<Vec<String>>();
-    for i in 0..lines.len() {
-        if re.is_match(&lines[i]) {
-            // Remove marker
-            lines.remove(i);
-
-            // Find corresponding ForEach
-            let mut found = false;
-            for foreach in foreaches.iter() {
-                if foreach.single_var() == re.captures(&lines[i]).unwrap().get(1).map_or("", |m| m.as_str()) {
-                    lines.insert(i, match eval_foreach(foreach.single_var().to_string(), &mut foreaches, collections) {
-                        Ok(l) => l,
-                        Err(e) => return Err(e),
-                    });
-                    found = true;
-                    break;
-                }
-            }
-
-            if !found {
-                return Err("Internal error: invalid foreach marker".to_string());
-            }
-        }
-    }
-
-    Ok(new_file)
 }
 
 pub fn generate_latex(gen_req: &Json<GenerationRequest>) -> Option<String> {
@@ -250,7 +271,8 @@ pub fn generate_latex(gen_req: &Json<GenerationRequest>) -> Option<String> {
     let file = fs::read_to_string(template_path).expect("Could not read template file");
     
     // Evaluate the template file using the data from gen_req
-    let new_file = evaluate(&file, gen_req).expect("Error while evaluating");
+    let mut eval = Evaluator::new();
+    let new_file = eval.evaluate(&file, gen_req).expect("Error while evaluating");
 
     // Write new file to temp directory
     let tex_output_path = temp_dir_path.join("new.tex");
