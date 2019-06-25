@@ -98,28 +98,35 @@ impl Evaluator {
 
         //let foreach: &mut ForEach = ForEach::get_from_mut(&mut self.foreaches, foreach).unwrap();
         let foreach: &str = &foreach;
-        let mut lines: Vec<String> = ForEach::get_from(&self.foreaches, foreach.to_string()).unwrap().content().lines().map(|l| l.to_string()).collect::<Vec<String>>();
-        let mut new_lines: Vec<String> = lines.clone(); // TODO probably undo by replacing new_lines with lines everywhere and deleting doubles
+        let lines: Vec<String> = ForEach::get_from(&self.foreaches, foreach.to_string()).unwrap().content().lines().map(|l| l.to_string()).collect::<Vec<String>>();
+        let mut new_lines: Vec<String> = Vec::new();
+        let mut one_more = true;
 
         match ForEach::get_from_mut(&mut self.foreaches, foreach.to_string()).unwrap().gen_objects(collections) {
             Ok(()) => (),
             Err(e) => return Err(e),
         };
 
-        while ForEach::get_from(&self.foreaches, foreach.to_string()).unwrap().has_next_obj() {
+        while ForEach::get_from(&self.foreaches, foreach.to_string()).unwrap().has_next_obj() || one_more == true {
+            let mut current_lines: Vec<String> = Vec::new();
+
+            if !ForEach::get_from(&self.foreaches, foreach.to_string()).unwrap().has_next_obj() && one_more == true {
+                one_more = false;
+            }
+
             for i in 0..lines.len() {
                 // If there is a ForEach nested in this one, evaluate it recursively
                 if re_fe.is_match(&lines[i]) {
                     // Remove marker
                     //lines.remove(i);
-                    new_lines.remove(i);
+                    //new_lines.remove(i);
 
                     // Find corresponding ForEach
                     let mut found = false;
                     // Loop of the foreaches using single var as the key to prevent direct referencing
                     for foreach in self.foreaches.iter().map(|fe| fe.single_var().to_string()) {
                         if foreach == re_fe.captures(&lines[i]).unwrap().get(1).map_or("", |m| m.as_str()) {
-                            new_lines.insert(i, match self.eval_foreach(foreach, collections) {
+                            current_lines.insert(i, match self.eval_foreach(foreach, collections) {
                                 Ok(l) => l,
                                 Err(e) => return Err(e),
                             });
@@ -132,19 +139,22 @@ impl Evaluator {
                         return Err("Internal error: invalid foreach marker".to_string());
                     }
                 } else {
-                    ForEach::get_from_mut(&mut self.foreaches, foreach.to_string()).unwrap().next_obj();
                     // TODO make safe (remove unwraps)
-                    new_lines[i] = re_of.replace_all(
-                        &lines[i],
-                        |caps: &Captures|
-                            ForEach::get_from(
-                                &self.foreaches,
-                                caps.get(2).unwrap().as_str().to_string())
-                                .expect("Couldn't find element in foreaches")
-                                .current_obj().get(&caps[1])
-                                .unwrap()).to_string();
+                    current_lines.push(re_of.replace_all(
+                        &lines[i],
+                        |caps: &Captures|
+                            ForEach::get_from(
+                                &self.foreaches,
+                                caps.get(2).unwrap().as_str().to_string())
+                                    .expect("Couldn't find element in foreaches")
+                                    .current_obj().get(&caps[1])
+                                    .unwrap()).to_string());
+
+                    ForEach::get_from_mut(&mut self.foreaches, foreach.to_string()).unwrap().next_obj();
                 }
             }
+
+            new_lines.append(&mut current_lines);
         }
 
         let mut res = String::new();
@@ -190,10 +200,11 @@ impl Evaluator {
                     return Err("Syntax error in foreach".to_string());
                 }
 
-                // Add marker for outermost ForEach to new_file or otherwise to outer ForEach loop
+                // Add marker for outermost ForEach to new_file or otherwise to outer ForEach
                 if foreach_stack.last().is_none() {
                     new_file += &format!("#![FE {}]\n", single_var);
                 } else {
+                    // Find outer ForEach (current topmost on stack)
                     for foreach in self.foreaches.iter_mut() {
                         if foreach.single_var() == foreach_stack.last().expect("Can't happen because of if condition") {
                             foreach.append_content(format!("#![FE {}]\n", single_var));
@@ -210,7 +221,6 @@ impl Evaluator {
                 if foreach_stack.pop().is_none() {
                     return Err("end foreach without foreach".to_string());
                 }
-                foreach_stack.pop();
             } else {
                 if foreach_stack.last().is_none() {
                     // Add line to new_file if it didn't contain a ForEach header
@@ -282,7 +292,7 @@ pub fn generate_latex(gen_req: &Json<GenerationRequest>) -> Option<String> {
     let tex_output_path = temp_dir_path.join("new.tex");
     fs::write(tex_output_path.as_path(), new_file).expect("Could not write new file");
 
-    /*let command = format!("pdflatex -output-directory={} {}", temp_dir_path.to_str().expect("Failed"), tex_output_path.to_str().expect("Failed")).to_string();
+    let command = format!("pdflatex -output-directory={} {}", temp_dir_path.to_str().expect("Failed"), tex_output_path.to_str().expect("Failed")).to_string();
     println!("command: {}", command);
     let output = Command::new("cmd")
         .args(&["/C", &format!("{}", command)])
@@ -297,7 +307,7 @@ pub fn generate_latex(gen_req: &Json<GenerationRequest>) -> Option<String> {
     // Delete temp directory
     fs::remove_dir_all(temp_dir_path).expect("Failed to remove temp dir");
 
-    println!("{:?}", output);*/
+    // println!("{:?}", output);
 
     Some(id)
 }
