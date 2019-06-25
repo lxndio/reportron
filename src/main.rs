@@ -10,6 +10,7 @@ use std::path::Path;
 use std::result::Result;
 use glob::glob;
 use rocket::response::NamedFile;
+use rocket::response::status::Custom;
 use rocket_contrib::json::{Json, JsonValue};
 use crate::generation_request::GenerationRequest;
 use crate::latex::generate_latex;
@@ -20,9 +21,11 @@ fn index() -> &'static str {
 }
 
 #[post("/", format = "json", data = "<gen_req>")]
-fn generate(gen_req: Json<GenerationRequest>) -> JsonValue {
-    let id = generate_latex(&gen_req);
-    json!({ "status": "ok", "id": id })
+fn generate(gen_req: Json<GenerationRequest>) -> Result<JsonValue, Custom<JsonValue>> {
+    match generate_latex(&gen_req) {
+        Ok(id) => Ok(json!({ "status": "ok", "id": id })),
+        Err(e) => Err(Custom(rocket::http::Status::InternalServerError, json!({ "status": e, "id": ""}))),
+    }   
 }
 
 #[get("/")]

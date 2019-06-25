@@ -272,7 +272,7 @@ impl Evaluator {
     }
 }
 
-pub fn generate_latex(gen_req: &Json<GenerationRequest>) -> Option<String> {
+pub fn generate_latex(gen_req: &Json<GenerationRequest>) -> Result<String, String> {
     let id = Uuid::new_v4().to_string(); // generate random id
     println!("using id: {:?}", id);
 
@@ -291,18 +291,20 @@ pub fn generate_latex(gen_req: &Json<GenerationRequest>) -> Option<String> {
     
     // Evaluate the template file using the data from gen_req
     let mut eval = Evaluator::new();
-    let new_file = eval.evaluate(&file, gen_req).expect("Error while evaluating");
+    let new_file = match eval.evaluate(&file, gen_req) {
+        Ok(new_file) => new_file,
+        Err(e) => return Err(e),
+    };
 
     // Write new file to temp directory
     let tex_output_path = temp_dir_path.join("new.tex");
     fs::write(tex_output_path.as_path(), new_file).expect("Could not write new file");
 
-    let command = format!("pdflatex -output-directory={} {}", temp_dir_path.to_str().expect("Failed"), tex_output_path.to_str().expect("Failed")).to_string();
-    println!("command: {}", command);
-    Command::new("cmd")
-        .args(&["/C", &format!("{}", command)])
-        .output()
-        .expect("Failed to run pdflatex");
+    let command = format!("pdflatex -interaction=batchmode -output-directory={} {}", temp_dir_path.to_str().expect("Failed"), tex_output_path.to_str().expect("Failed")).to_string();
+    match Command::new("cmd") .args(&["/C", &format!("{}", command)]).status() {
+        Ok(_) => (),
+        Err(e) => return Err(e.to_string()), 
+    };
 
     // Rename pdf output file in temp directory and move it to the main directory
     let pdf_temp_path = tex_output_path.with_extension("pdf");
@@ -312,5 +314,5 @@ pub fn generate_latex(gen_req: &Json<GenerationRequest>) -> Option<String> {
     // Delete temp directory
     fs::remove_dir_all(temp_dir_path).expect("Failed to remove temp dir");
 
-    Some(id)
+    Ok(id)
 }
