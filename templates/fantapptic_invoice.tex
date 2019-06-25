@@ -3,6 +3,13 @@
 \usepackage{lmodern, textcomp}
 \usepackage{geometry}
 \usepackage{fancyhdr}
+\usepackage{color, colortbl}
+\usepackage[table]{xcolor}
+\usepackage{xcolor}
+\usepackage{tabu}
+
+\definecolor{FantappticGreen}{rgb}{0,0.6275,0.4784}
+
 
 \geometry{
     a4paper,
@@ -18,15 +25,18 @@
 \rhead{Rechnung vom #[date]}
 
 \begin{document}
-
+\rowcolors{2}{gray!25}{white}
 \begin{center}
-    \begin{tabular}{ l r }
+    \begin{tabu}{ c | c | c | c | c }
+        \rowfont{\color{white}}
+        \rowcolor{FantappticGreen!50}
+        Position & Bezeichnung & Anzahl & Stückpreis & Gesamtpreis \\ [0.25ex] % header cells
         \hline
+        %heading
         #[foreach a in articles]
-        #[name of a] & #[price of a] \\ \hline
+        #[position of a] & #[name of a] & #[count of a] & #[price of a] & #[total of a] \\ \hline
         #[end foreach]
-        \hline
-    \end{tabular}
+    \end{tabu}
 \end{center}
 
 \end{document}
