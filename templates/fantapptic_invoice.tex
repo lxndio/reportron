@@ -15,16 +15,16 @@
 \pagestyle{fancy}
 \fancyhf{}
 \lhead{Fantapptic Apps.}
-\rhead{Rechnung vom #[date]}
+\rhead{Rechnung vom $date}
 
 \begin{document}
 
 \begin{center}
     \begin{tabular}{ l r }
         \hline
-        #[foreach a in articles]
-        #[name of a] & #[price of a] \\ \hline
-        #[end foreach]
+        #for $a in $articles
+        $a.name & $a.price \\ \hline
+        #end for
         \hline
     \end{tabular}
 \end{center}
