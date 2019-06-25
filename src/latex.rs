@@ -276,6 +276,11 @@ pub fn generate_latex(gen_req: &Json<GenerationRequest>) -> Option<String> {
     let id = Uuid::new_v4().to_string(); // generate random id
     println!("using id: {:?}", id);
 
+    // Create pdf directory if it doesn't exist yet
+    if !Path::new("pdf").exists() {
+        fs::create_dir(Path::new("pdf")).expect("Could not create pdf dir");
+    }
+
     // Create temp directory for output of this job
     let temp_dir_path = Path::new("pdf").join(format!("temp-{}", id));
     fs::create_dir(temp_dir_path.as_path()).expect("Could not create temp dir");
@@ -294,7 +299,7 @@ pub fn generate_latex(gen_req: &Json<GenerationRequest>) -> Option<String> {
 
     let command = format!("pdflatex -output-directory={} {}", temp_dir_path.to_str().expect("Failed"), tex_output_path.to_str().expect("Failed")).to_string();
     println!("command: {}", command);
-    let output = Command::new("cmd")
+    Command::new("cmd")
         .args(&["/C", &format!("{}", command)])
         .output()
         .expect("Failed to run pdflatex");
@@ -306,8 +311,6 @@ pub fn generate_latex(gen_req: &Json<GenerationRequest>) -> Option<String> {
 
     // Delete temp directory
     fs::remove_dir_all(temp_dir_path).expect("Failed to remove temp dir");
-
-    // println!("{:?}", output);
 
     Some(id)
 }
