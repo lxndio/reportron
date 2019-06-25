@@ -6,7 +6,6 @@
 mod latex;
 mod generation_request;
 
-use std::collections::HashMap;
 use std::path::Path;
 use std::result::Result;
 use glob::glob;
@@ -22,19 +21,7 @@ fn index() -> &'static str {
 
 #[post("/", format = "json", data = "<gen_req>")]
 fn generate(gen_req: Json<GenerationRequest>) -> JsonValue {
-    // TODO Replace test data with the corresponding data from the given JSON object
-    let mut article1: HashMap<String, String> = HashMap::new();
-    article1.insert("Test 1".to_string(), "13,37 €".to_string());
-    let mut article2: HashMap<String, String> = HashMap::new();
-    article2.insert("Test 2".to_string(), "42,42 €".to_string());
-
-    let mut collections: HashMap<String, Vec<HashMap<String, String>>> = HashMap::new();
-    collections.insert("articles".to_string(), vec![article1, article2]);
-
-    let mut keys: HashMap<String, String> = HashMap::new();
-    keys.insert("date".to_string(), "20.06.2019".to_string());
-
-    let id = generate_latex(&gen_req, &keys, &collections);
+    let id = generate_latex(&gen_req);
     json!({ "status": "ok", "id": id })
 }
 
