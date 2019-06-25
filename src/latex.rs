@@ -43,7 +43,7 @@ impl ForEach {
     }
 
     fn has_next_obj(&self) -> bool {
-        (0..self.objects.len()).contains(&self.current_obj)
+        (0..self.objects.len()-1).contains(&self.current_obj)
     }
 
     fn next_obj(&mut self) -> Option<&HashMap<String, String>> {
@@ -99,6 +99,7 @@ impl Evaluator {
         //let foreach: &mut ForEach = ForEach::get_from_mut(&mut self.foreaches, foreach).unwrap();
         let foreach: &str = &foreach;
         let mut lines: Vec<String> = ForEach::get_from(&self.foreaches, foreach.to_string()).unwrap().content().lines().map(|l| l.to_string()).collect::<Vec<String>>();
+        let mut new_lines: Vec<String> = lines.clone(); // TODO probably undo by replacing new_lines with lines everywhere and deleting doubles
 
         match ForEach::get_from_mut(&mut self.foreaches, foreach.to_string()).unwrap().gen_objects(collections) {
             Ok(()) => (),
@@ -110,14 +111,15 @@ impl Evaluator {
                 // If there is a ForEach nested in this one, evaluate it recursively
                 if re_fe.is_match(&lines[i]) {
                     // Remove marker
-                    lines.remove(i);
+                    //lines.remove(i);
+                    new_lines.remove(i);
 
                     // Find corresponding ForEach
                     let mut found = false;
                     // Loop of the foreaches using single var as the key to prevent direct referencing
                     for foreach in self.foreaches.iter().map(|fe| fe.single_var().to_string()) {
                         if foreach == re_fe.captures(&lines[i]).unwrap().get(1).map_or("", |m| m.as_str()) {
-                            lines.insert(i, match self.eval_foreach(foreach, collections) {
+                            new_lines.insert(i, match self.eval_foreach(foreach, collections) {
                                 Ok(l) => l,
                                 Err(e) => return Err(e),
                             });
@@ -131,24 +133,22 @@ impl Evaluator {
                     }
                 } else {
                     ForEach::get_from_mut(&mut self.foreaches, foreach.to_string()).unwrap().next_obj();
-                    let new_line = &lines[i];
                     // TODO make safe (remove unwraps)
-                    re_of.replace_all(
-                        &new_line,
-                        |caps: &Captures|
-                            ForEach::get_from(
-                                &self.foreaches,
-                                caps.get(2).expect("Shouldn't happen").as_str().to_string())
-                                .expect("Couldn't get from foreaches")
-                                .current_obj().get(&caps[1])
-                                .unwrap());
-                    // Fill in to result
+                    new_lines[i] = re_of.replace_all(
+                        &lines[i],
+                        |caps: &Captures|
+                            ForEach::get_from(
+                                &self.foreaches,
+                                caps.get(2).unwrap().as_str().to_string())
+                                .expect("Couldn't find element in foreaches")
+                                .current_obj().get(&caps[1])
+                                .unwrap()).to_string();
                 }
             }
         }
 
         let mut res = String::new();
-        for line in lines.iter() {
+        for line in new_lines.iter() {
             res += &format!("\n{}", line);
         }
 
@@ -236,6 +236,8 @@ impl Evaluator {
                 let mut found = false;
                 for foreach in self.foreaches.iter().map(|fe| fe.single_var().to_string()) {
                     if foreach == re.captures(&lines[i]).unwrap().get(1).map_or("", |m| m.as_str()) {
+                        // Remove marker and insert replacement
+                        lines.remove(i);
                         lines.insert(i, match self.eval_foreach(foreach, collections) {
                             Ok(l) => l,
                             Err(e) => return Err(e),
@@ -245,16 +247,18 @@ impl Evaluator {
                     }
                 }
 
-                // Remove marker
-                lines.remove(i);
-
                 if !found {
                     return Err("Internal error: invalid foreach marker".to_string());
                 }
             }
         }
 
-        Ok(new_file)
+        let mut res = String::new();
+        for line in lines.iter() {
+            res += &format!("\n{}", line);
+        }
+
+        Ok(res)
     }
 }
 
