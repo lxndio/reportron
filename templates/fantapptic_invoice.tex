@@ -10,7 +10,6 @@
 
 \definecolor{FantappticGreen}{rgb}{0,0.6275,0.4784}
 
-
 \geometry{
     a4paper,
     top=30mm,
@@ -22,21 +21,18 @@
 \pagestyle{fancy}
 \fancyhf{}
 \lhead{Fantapptic Apps.}
-\rhead{Rechnung vom #[date]}
+\rhead{Rechnung vom 26.06.2019}
 
 \begin{document}
 \rowcolors{2}{gray!25}{white}
 \begin{center}
-    \begin{tabu}{ c | c | c | c | c }
-        \rowfont{\color{white}}
+    \begin{tabular}{ c | c | c | c | c }
         \rowcolor{FantappticGreen!50}
-        Position & Bezeichnung & Anzahl & Stückpreis & Gesamtpreis \\ [0.25ex] % header cells
+        \color{white}Position & \color{white}Bezeichnung & \color{white}Anzahl & \color{white}St\"uckpreis & \color{white}Gesamtpreis \\ [0.25ex] % header cells
         \hline
         %heading
-        #[foreach a in articles]
-        #[position of a] & #[name of a] & #[count of a] & #[price of a] & #[total of a] \\ \hline
-        #[end foreach]
-    \end{tabu}
+        Test & Test & Test & Test & Test \\ \hline
+    \end{tabular}
 \end{center}
 
 \end{document}
