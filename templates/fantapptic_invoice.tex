@@ -21,7 +21,7 @@
 \pagestyle{fancy}
 \fancyhf{}
 \lhead{Fantapptic Apps.}
-\rhead{Rechnung vom 26.06.2019}
+\rhead{Rechnung vom #[date]}
 
 \begin{document}
 \rowcolors{2}{gray!25}{white}
@@ -31,7 +31,9 @@
         \color{white}Position & \color{white}Bezeichnung & \color{white}Anzahl & \color{white}St\"uckpreis & \color{white}Gesamtpreis \\ [0.25ex] % header cells
         \hline
         %heading
-        Test & Test & Test & Test & Test \\ \hline
+        #[foreach a in articles]
+        #[position of a] & #[name of a] & #[count of a] & #[price of a] & #[total of a] \\ \hline
+        #[end foreach]
     \end{tabular}
 \end{center}
 
