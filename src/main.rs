@@ -53,7 +53,7 @@ fn list() -> JsonValue {
 
 #[get("/<id>")]
 fn get_pdf(id: usize) -> Option<NamedFile> {
-    NamedFile::open(Path::new(&format!("pdf/output{}.pdf", id))).ok()
+    NamedFile::open(Path::new(&format!("pdf/output-{}.pdf", id))).ok()
 }
 
 fn rocket() -> rocket::Rocket {
