@@ -52,7 +52,7 @@ fn list() -> JsonValue {
 }
 
 #[get("/<id>")]
-fn get_pdf(id: usize) -> Option<NamedFile> {
+fn get_pdf(id: String) -> Option<NamedFile> {
     NamedFile::open(Path::new(&format!("pdf/output-{}.pdf", id))).ok()
 }
 
